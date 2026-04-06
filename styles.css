@@ -371,6 +371,12 @@ body {
 .tweet-footer span:hover { color: var(--text); }
 .tweet-time { margin-left: auto; font-size: 12px; }
 
+/* ===== CLICKABLE CARDS ===== */
+a.model-card, a.gh-card, a.news-card, a.tweet-card, a.dl-row, a.lb-row {
+  display: block; text-decoration: none; color: inherit; cursor: pointer;
+}
+a.dl-row, a.lb-row { display: flex; }
+
 /* ===== FOOTER ===== */
 .footer { border-top: 1px solid var(--border); padding: 40px 32px; }
 .footer-inner {

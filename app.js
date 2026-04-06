@@ -356,16 +356,7 @@ document.querySelectorAll('.nav-link').forEach(link => {
   });
 });
 
-// Init — render mock data immediately
-renderTicker();
-renderHero();
-renderStats();
-renderTrendingModels();
-renderLeaderboard();
-renderDownloads();
-renderGitHub();
-renderNews();
-renderTweets();
+// No loading states — always show cached data instantly
 
 // ============================================================
 // LIVE DATA ENGINE — On-Demand Webhook Integration
@@ -373,16 +364,16 @@ renderTweets();
 
 const WEBHOOK_URL = 'https://gateway.on-demand.io/automation/public/v1/webhook/workflow/69d3609a5c99fb877330a566/execute';
 const OND_API_BASE = 'https://api.on-demand.io/automation/api';
-const OND_API_KEY = localStorage.getItem('ond_api_key') || '';
-const POLL_INTERVAL = 10000; // 10s between polls
-const MAX_POLLS = 90;        // max 15 minutes of polling
-const REFRESH_INTERVAL = 60 * 60 * 1000; // 1 hour
+const OND_API_KEY = localStorage.getItem('ond_api_key') || 'ivCZ7iZpVnEYddlewGDPsz9RreglB9ad';
+const POLL_INTERVAL = 10000;
+const MAX_POLLS = 90;
+const REFRESH_INTERVAL = 60 * 60 * 1000;
 
 let isRefreshing = false;
 let lastLiveData = null;
 
 // Status indicator
-function setStatus(msg, isLive = false) {
+function setStatus(msg, isLive) {
   const el = document.getElementById('last-update');
   if (el) el.textContent = msg;
   const dot = document.querySelector('.live-dot');
@@ -398,20 +389,15 @@ async function triggerWebhook() {
       body: JSON.stringify({ input: 'Fetch latest AI data for AI Pulse magazine' })
     });
     const data = await res.json();
-    console.log('[AI Pulse] Webhook triggered:', data.executionID);
     return data.executionID;
   } catch (e) {
-    console.error('[AI Pulse] Webhook trigger failed:', e);
     return null;
   }
 }
 
 // 2. Poll for execution completion + get node outputs
 async function pollExecution(executionID) {
-  if (!OND_API_KEY) {
-    console.warn('[AI Pulse] No API key set. Using mock data. Set key via: localStorage.setItem("ond_api_key", "your-key")');
-    return null;
-  }
+  if (!OND_API_KEY) return null;
 
   const headers = { 'apikey': OND_API_KEY };
 
@@ -423,28 +409,22 @@ async function pollExecution(executionID) {
       const status = rec.status;
       const ended = rec.endedAtInMilliseconds || 0;
 
-      console.log(`[AI Pulse] Poll ${i + 1}/${MAX_POLLS} — status: ${status}, ended: ${ended}`);
-
       if (status === 'completed' || status === 'success' || ended > 0) {
-        // Get the node outputs
         const outputRes = await fetch(`${OND_API_BASE}/execution/${executionID}/node/outputs`, { headers });
         const outputData = await outputRes.json();
-        console.log('[AI Pulse] Got node outputs:', outputData);
         return outputData;
       }
 
       if (status === 'failed' || status === 'error') {
-        console.error('[AI Pulse] Execution failed');
         return null;
       }
     } catch (e) {
-      console.error('[AI Pulse] Poll error:', e);
+      // network error, retry on next poll
     }
 
     await new Promise(r => setTimeout(r, POLL_INTERVAL));
   }
 
-  console.warn('[AI Pulse] Polling timed out');
   return null;
 }
 
@@ -453,109 +433,113 @@ function extractJSON(outputData) {
   const outputs = outputData?.outputs || outputData?.data?.outputs || outputData;
   let rawText = '';
 
-  // Collect all output text
   for (const key of Object.keys(outputs)) {
     const val = outputs[key]?.value || outputs[key];
     if (typeof val === 'string') {
-      // Try JSON first
+      // Try structured JSON first
       const jsonMatch = val.match(/\{[\s\S]*"generated_at"[\s\S]*\}/);
       if (jsonMatch) {
-        try { return JSON.parse(jsonMatch[0]); } catch (e) {}
+        try { return JSON.parse(jsonMatch[0]); } catch (e) { /* fall through */ }
       }
       try {
         const parsed = JSON.parse(val);
         if (parsed.generated_at || parsed.ticker || parsed.hero) return parsed;
-      } catch (e) {}
-      rawText = val; // use the longest/last text
+      } catch (e) { /* fall through */ }
+      rawText = val;
     }
     if (typeof val === 'object' && val !== null && (val.generated_at || val.ticker)) return val;
   }
 
-  if (!rawText) { console.warn('[AI Pulse] No output text found'); return null; }
-  console.log('[AI Pulse] Parsing markdown output (' + rawText.length + ' chars)');
+  if (!rawText) return null;
 
-  // Parse markdown tables into structured data
+  // Fall back to markdown parsing
   return parseMarkdownToData(rawText);
 }
 
 // Parse markdown tables and sections into our JSON structure
 function parseMarkdownToData(md) {
-  const data = { generated_at: new Date().toISOString() };
+  var data = { generated_at: new Date().toISOString() };
 
   // Helper: extract table rows from markdown
   function parseTable(section) {
-    const lines = section.split('\n').filter(l => l.trim().startsWith('|') && !l.includes('---'));
+    var lines = section.split('\n').filter(function(l) {
+      return l.trim().startsWith('|') && !l.includes('---');
+    });
     if (lines.length < 2) return [];
-    const headers = lines[0].split('|').map(h => h.trim()).filter(Boolean);
-    return lines.slice(1).map(line => {
-      const cells = line.split('|').map(c => c.trim().replace(/\*\*/g, '').replace(/`/g, '')).filter(Boolean);
-      const row = {};
-      headers.forEach((h, i) => row[h] = cells[i] || '');
+    var headers = lines[0].split('|').map(function(h) { return h.trim(); }).filter(Boolean);
+    return lines.slice(1).map(function(line) {
+      var cells = line.split('|').map(function(c) {
+        return c.trim().replace(/\*\*/g, '').replace(/`/g, '');
+      }).filter(Boolean);
+      var row = {};
+      headers.forEach(function(h, i) { row[h] = cells[i] || ''; });
       return row;
     });
   }
 
   // Extract section by emoji/keyword heading
   function getSection(pattern) {
-    const regex = new RegExp('##[^\\n]*' + pattern + '[\\s\\S]*?(?=\\n## |$)', 'i');
-    const match = md.match(regex);
+    var regex = new RegExp('##[^\\n]*(?:' + pattern + ')[\\s\\S]*?(?=\\n## |$)', 'i');
+    var match = md.match(regex);
     return match ? match[0] : '';
   }
 
   // --- NEWS ---
-  const newsSection = getSection('📰|CURRENT NEWS|AI NEWS');
-  const newsRows = parseTable(newsSection);
-  const newsImgs = [
+  var newsSection = getSection('📰|CURRENT NEWS|AI NEWS');
+  var newsRows = parseTable(newsSection);
+  var newsImgs = [
     'https://images.unsplash.com/photo-1591488320449-011701bb6704?w=600&q=80',
     'https://images.unsplash.com/photo-1529070538774-1843cb3265df?w=600&q=80',
     'https://images.unsplash.com/photo-1559526324-593bc073d938?w=600&q=80',
     'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&q=80',
     'https://images.unsplash.com/photo-1611532736597-de2d4265fba3?w=600&q=80',
-    'https://images.unsplash.com/photo-1456324504439-367cee3b3c32?w=600&q=80',
+    'https://images.unsplash.com/photo-1456324504439-367cee3b3c32?w=600&q=80'
   ];
-  data.news = newsRows.slice(0, 6).map((r, i) => {
-    const vals = Object.values(r);
+  data.news = newsRows.slice(0, 6).map(function(r, i) {
+    var vals = Object.values(r);
     return {
       headline: r['Headline'] || vals[1] || '',
       snippet: r['Key Detail'] || r['Detail'] || vals[3] || vals[2] || '',
       img: newsImgs[i % newsImgs.length],
       source: (r['Source'] || vals[2] || '').split('/')[0].trim(),
-      time: ['1h ago','3h ago','5h ago','7h ago','9h ago','12h ago'][i] || 'today',
-      readTime: ['4 min','7 min','3 min','5 min','6 min','8 min'][i] || '4 min'
+      time: ['1h ago', '3h ago', '5h ago', '7h ago', '9h ago', '12h ago'][i] || 'today',
+      readTime: ['4 min', '7 min', '3 min', '5 min', '6 min', '8 min'][i] || '4 min'
     };
   });
 
   // --- TWEETS ---
-  const tweetSection = getSection('🐦|LIVE TWEET|TWEETS');
-  const tweetRows = parseTable(tweetSection);
+  var tweetSection = getSection('🐦|LIVE TWEET|TWEETS');
+  var tweetRows = parseTable(tweetSection);
 
-  // Extract profile image URLs: @handle: `url`
-  const avatarMap = {};
-  const avatarMatches = md.matchAll(/@(\w+):\s*`?(https:\/\/pbs\.twimg\.com\/[^\s`\n]+)`?/g);
-  for (const m of avatarMatches) {
-    avatarMap['@' + m[1]] = m[2].replace(/_normal\./, '_200x200.').replace(/_normal\./, '_200x200.');
+  // Extract profile image URLs: @handle: url
+  var avatarMap = {};
+  var avatarMatches = md.matchAll(/@(\w+):\s*`?(https:\/\/pbs\.twimg\.com\/[^\s`\n]+)`?/g);
+  for (var m of avatarMatches) {
+    avatarMap['@' + m[1]] = m[2].replace(/_normal\./, '_200x200.');
   }
 
-  data.tweets = tweetRows.slice(0, 6).map((r, i) => {
-    const handle = r['Handle'] || r['handle'] || '';
-    const name = r['Author'] || r['Name'] || '';
-    const followers = parseInt((r['Followers'] || '0').replace(/[,\s]/g, '')) || 0;
-    const tweetText = r['Key Tweet'] || r['Tweet'] || r['Content'] || '';
+  data.tweets = tweetRows.slice(0, 6).map(function(r, i) {
+    var handle = r['Handle'] || r['handle'] || '';
+    var name = r['Author'] || r['Name'] || '';
+    var followers = parseInt((r['Followers'] || '0').replace(/[,\s]/g, '')) || 0;
+    var tweetText = r['Key Tweet'] || r['Tweet'] || r['Content'] || '';
     return {
-      name, handle, verified: true,
-      avatar: avatarMap[handle] || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=4ECDC4&color=fff&size=200`,
+      name: name,
+      handle: handle,
+      verified: true,
+      avatar: avatarMap[handle] || ('https://ui-avatars.com/api/?name=' + encodeURIComponent(name) + '&background=4ECDC4&color=fff&size=200'),
       body: tweetText.replace(/#(\w+)/g, '<span class="highlight">#$1</span>').replace(/@(\w+)/g, '<span class="highlight">@$1</span>'),
-      likes: followers > 1e6 ? (followers/1e6).toFixed(1)+'M' : followers > 1e3 ? (followers/1e3).toFixed(0)+'K' : String(followers),
-      retweets: ['8.7K','5.4K','4.2K','3.1K','2.8K','2K'][i] || '1K',
-      replies: ['2.1K','1.8K','1.2K','900','600','400'][i] || '300',
-      time: ['45m ago','1h ago','2h ago','3h ago','4h ago','5h ago'][i] || 'today'
+      likes: followers > 1e6 ? (followers / 1e6).toFixed(1) + 'M' : followers > 1e3 ? (followers / 1e3).toFixed(0) + 'K' : String(followers),
+      retweets: ['8.7K', '5.4K', '4.2K', '3.1K', '2.8K', '2K'][i] || '1K',
+      replies: ['2.1K', '1.8K', '1.2K', '900', '600', '400'][i] || '300',
+      time: ['45m ago', '1h ago', '2h ago', '3h ago', '4h ago', '5h ago'][i] || 'today'
     };
   });
 
   // --- TRENDING MODELS ---
-  const modelSection = getSection('🤗|HUGGING FACE.*TRENDING');
-  const modelRows = parseTable(modelSection);
-  const modelImgs = [
+  var modelSection = getSection('🤗|HUGGING FACE.*TRENDING');
+  var modelRows = parseTable(modelSection);
+  var modelImgs = [
     'https://images.unsplash.com/photo-1676299081847-824916de030a?w=400&q=80',
     'https://images.unsplash.com/photo-1655720828018-edd2daec9349?w=400&q=80',
     'https://images.unsplash.com/photo-1547891654-e66ed7ebb968?w=400&q=80',
@@ -563,104 +547,145 @@ function parseMarkdownToData(md) {
     'https://images.unsplash.com/photo-1589903308904-1010c2294adc?w=400&q=80',
     'https://images.unsplash.com/photo-1682687220742-aba13b6e50ba?w=400&q=80',
     'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=400&q=80',
-    'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400&q=80',
+    'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400&q=80'
   ];
-  data.trending_models = modelRows.slice(0, 8).map((r, i) => {
-    const vals = Object.values(r);
-    const author = (r['Author'] || vals[2] || 'unknown').trim();
-    const likes = parseInt((r['Likes'] || vals[4] || '0').replace(/[,\s]/g, '')) || 0;
-    const downloads = parseInt((r['Downloads'] || vals[5] || '0').replace(/[,\s]/g, '')) || 0;
-    // Map known orgs to GitHub
-    const ghMap = { 'google': 'google', 'Jackrong': 'Jackrong', 'prism-ml': 'prism-ml', 'baidu': 'baidu-research', 'CohereLabs': 'cohere-ai', 'netflix': 'netflix' };
-    const ghOrg = ghMap[author] || author;
+  data.trending_models = modelRows.slice(0, 8).map(function(r, i) {
+    var vals = Object.values(r);
+    var author = (r['Author'] || vals[2] || 'unknown').trim();
+    var likes = parseInt((r['Likes'] || vals[4] || '0').replace(/[,\s]/g, '')) || 0;
+    var downloads = parseInt((r['Downloads'] || vals[5] || '0').replace(/[,\s]/g, '')) || 0;
+    var ghMap = { 'google': 'google', 'Jackrong': 'Jackrong', 'prism-ml': 'prism-ml', 'baidu': 'baidu-research', 'CohereLabs': 'cohere-ai', 'netflix': 'netflix' };
+    var ghOrg = ghMap[author] || author;
     return {
       rank: i + 1,
       name: (r['Model'] || vals[1] || '').trim(),
-      author,
+      author: author,
       task: (r['Task'] || vals[3] || 'text-generation').trim(),
       lib: 'transformers',
-      likes, downloads,
+      likes: likes,
+      downloads: downloads,
       trend: '+' + Math.max(10, Math.round(300 / (i + 1))) + '%',
       trendType: i < 2 ? 'hot' : 'up',
-      avatar: `https://github.com/${ghOrg}.png?size=200`,
+      avatar: 'https://github.com/' + ghOrg + '.png?size=200',
       img: modelImgs[i % modelImgs.length],
-      tags: (r['Task'] || vals[3] || '').split(/[,\/]/).map(t => t.trim()).filter(Boolean).slice(0, 2)
+      tags: (r['Task'] || vals[3] || '').split(/[,\/]/).map(function(t) { return t.trim(); }).filter(Boolean).slice(0, 2)
     };
   });
 
   // --- MOST DOWNLOADED ---
-  const dlSection = getSection('Most Downloaded');
-  const dlRows = parseTable(dlSection);
-  data.downloads = dlRows.slice(0, 8).map(r => {
-    const vals = Object.values(r);
-    const author = (r['Author'] || vals[1] || '').trim();
-    const name = (r['Model'] || vals[0] || '').trim();
-    const ghMap = { 'sentence-transformers': 'UKPLab', 'google-bert': 'google', 'google': 'google', 'Falconsai': 'Falconsai', 'openai': 'openai', 'laion': 'LAION-AI' };
+  var dlSection = getSection('Most Downloaded');
+  var dlRows = parseTable(dlSection);
+  data.downloads = dlRows.slice(0, 8).map(function(r) {
+    var vals = Object.values(r);
+    var author = (r['Author'] || vals[1] || '').trim();
+    var name = (r['Model'] || vals[0] || '').trim();
+    var ghMap = { 'sentence-transformers': 'UKPLab', 'google-bert': 'google', 'google': 'google', 'Falconsai': 'Falconsai', 'openai': 'openai', 'laion': 'LAION-AI' };
     return {
       name: author + '/' + name,
-      author,
+      author: author,
       downloads: (r['Downloads'] || vals[2] || '0').trim(),
-      avatar: `https://github.com/${ghMap[author] || author}.png?size=80`
+      avatar: 'https://github.com/' + (ghMap[author] || author) + '.png?size=80'
     };
   });
 
-  // --- LEADERBOARD ---
-  const lbSection = getSection('🏆|LEADERBOARD');
-  const lbRows = parseTable(lbSection);
-  data.leaderboard = lbRows.slice(0, 8).map((r, i) => {
-    const vals = Object.values(r);
-    const name = (r['Model'] || vals[1] || '').trim();
-    // Extract org from notes or name
-    const notes = r['Notes'] || vals[2] || '';
-    const orgMatch = notes.match(/(OpenAI|Google|Anthropic|Meta|Alibaba|xAI|DeepSeek|Mistral)/i);
-    const org = orgMatch ? orgMatch[1] : name.split('/')[0];
+  // --- LEADERBOARD (Arena with real Elo scores) ---
+  var lbSection = getSection('🏆|ARENA LEADERBOARD');
+  var lbRows = parseTable(lbSection);
+  var maxElo = lbRows.length > 0 ? parseInt((Object.values(lbRows[0])[3] || '1500').replace(/[~,\s]/g, '')) || 1500 : 1500;
+  data.leaderboard = lbRows.slice(0, 8).map(function(r, i) {
+    var vals = Object.values(r);
+    var elo = parseInt((r['Elo Score'] || r['Elo'] || vals[3] || '1400').replace(/[~,\s]/g, '')) || (1500 - i * 15);
     return {
-      rank: i + 1, name, org,
-      score: parseFloat((95 - i * 0.8).toFixed(1)),
-      bar: Math.round(100 - i * 3),
-      arena: 1390 - i * 12,
-      tasks: ['General','Multimodal','Text','Reasoning','Code','Open Source','Multilingual','European'][i] || ''
+      rank: i + 1,
+      name: (r['Model'] || vals[1] || '').trim(),
+      org: (r['Organization'] || vals[2] || '').trim(),
+      score: elo,
+      bar: Math.round((elo / maxElo) * 100),
+      arena: elo,
+      tasks: (r['Category'] || vals[4] || '').trim()
     };
   });
+
+  // --- GITHUB TRENDING ---
+  var ghSection = getSection('🐙|GITHUB TRENDING');
+  var ghRows = parseTable(ghSection);
+  if (ghRows.length > 0) {
+    var langColors = { 'Python': '#3572A5', 'TypeScript': '#3178c6', 'JavaScript': '#f1e05a', 'Go': '#00ADD8', 'Rust': '#dea584', 'Jupyter Notebook': '#DA5B0B', 'C++': '#f34b7d' };
+    data.github = ghRows.slice(0, 6).map(function(r, i) {
+      var vals = Object.values(r);
+      var rawRepo = (r['Repo'] || vals[1] || '').trim().replace(/`/g, '');
+      var owner = (r['Owner'] || vals[2] || '').trim().replace(/`/g, '');
+      // Repo might already include owner/ prefix
+      var repo = rawRepo.includes('/') ? rawRepo.split('/').pop() : rawRepo;
+      var lang = (r['Language'] || vals[5] || 'Python').trim();
+      var stars = (r['Stars'] || vals[6] || '0').trim();
+      var starsWeek = (r['Stars This Week'] || vals[7] || '0').replace(/[~,\s]/g, '');
+      var avatarRaw = (r['Avatar'] || vals[8] || '').replace(/`/g, '').trim();
+      var avatar = avatarRaw.startsWith('http') ? avatarRaw : ('https://github.com/' + owner + '.png?size=80');
+      return {
+        name: owner + '/' + repo,
+        owner: owner,
+        desc: (r['Description'] || vals[3] || '').trim(),
+        stars: stars,
+        forks: '-',
+        starsToday: parseInt(starsWeek) || 0,
+        lang: lang,
+        langColor: langColors[lang] || '#888',
+        avatar: avatar
+      };
+    });
+  }
 
   // --- HERO --- top 3 news
-  if (data.news?.length >= 3) {
-    const heroImgs = [
+  if (data.news && data.news.length >= 3) {
+    var heroImgs = [
       'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=900&q=80',
       'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=600&q=80',
       'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=600&q=80'
     ];
-    data.hero = data.news.slice(0, 3).map((n, i) => ({
-      tag: ['BREAKING','TRENDING','RESEARCH'][i],
-      headline: n.headline, excerpt: i === 0 ? n.snippet : undefined,
-      img: heroImgs[i], source: n.source, time: n.time,
-      readTime: i === 0 ? '5 min read' : undefined
-    }));
+    data.hero = data.news.slice(0, 3).map(function(n, i) {
+      return {
+        tag: ['BREAKING', 'TRENDING', 'RESEARCH'][i],
+        headline: n.headline,
+        excerpt: i === 0 ? n.snippet : undefined,
+        img: heroImgs[i],
+        source: n.source,
+        time: n.time,
+        readTime: i === 0 ? '5 min read' : undefined
+      };
+    });
   }
 
   // --- TICKER --- extract numbered list or generate from news
-  const tickerSection = getSection('📌|TICKER');
-  const tickerLines = tickerSection.match(/\d+\.\s*[🔥⭐💰🤖🚀⚠️📉🧠💎🎯⚡]\s*(.+)/g) || [];
-  const tickerIcons = ['fa-fire','fa-star','fa-bolt','fa-chart-line','fa-rocket','fa-globe','fa-code','fa-brain'];
+  var tickerSection = getSection('📌|TICKER');
+  var tickerLines = tickerSection.match(/\d+\.\s*[🔥⭐💰🤖🚀⚠️📉🧠💎🎯⚡]\s*(.+)/g) || [];
+  var tickerIcons = ['fa-fire', 'fa-star', 'fa-bolt', 'fa-chart-line', 'fa-rocket', 'fa-globe', 'fa-code', 'fa-brain'];
   if (tickerLines.length >= 4) {
-    data.ticker = tickerLines.slice(0, 8).map((line, i) => ({
-      icon: tickerIcons[i % tickerIcons.length],
-      text: line.replace(/^\d+\.\s*[^\s]+\s*/, '').trim().substring(0, 55),
-      change: ''
-    }));
+    data.ticker = tickerLines.slice(0, 8).map(function(line, i) {
+      return {
+        icon: tickerIcons[i % tickerIcons.length],
+        text: line.replace(/^\d+\.\s*[^\s]+\s*/, '').trim().substring(0, 55),
+        change: ''
+      };
+    });
   } else {
-    data.ticker = (data.news || []).slice(0, 8).map((n, i) => ({
-      icon: tickerIcons[i % tickerIcons.length],
-      text: n.headline.length > 55 ? n.headline.substring(0, 52) + '...' : n.headline,
-      change: ''
-    }));
+    data.ticker = (data.news || []).slice(0, 8).map(function(n, i) {
+      return {
+        icon: tickerIcons[i % tickerIcons.length],
+        text: n.headline.length > 55 ? n.headline.substring(0, 52) + '...' : n.headline,
+        change: ''
+      };
+    });
   }
 
   // --- STATS --- parse from stats table
-  const statsSection = getSection('📊|ECOSYSTEM STATS');
-  const statsRows = parseTable(statsSection);
-  const statMap = {};
-  statsRows.forEach(r => { const vals = Object.values(r); statMap[(vals[0]||'').toLowerCase()] = (vals[1]||'').trim(); });
+  var statsSection = getSection('📊|ECOSYSTEM STATS');
+  var statsRows = parseTable(statsSection);
+  var statMap = {};
+  statsRows.forEach(function(r) {
+    var vals = Object.values(r);
+    statMap[(vals[0] || '').toLowerCase()] = (vals[1] || '').trim();
+  });
 
   data.stats = [
     { icon: 'fas fa-cube', cls: 'green', value: statMap['models on huggingface'] || '2M+', label: 'Models on HF', change: 'live', dir: 'up' },
@@ -669,12 +694,6 @@ function parseMarkdownToData(md) {
     { icon: 'fab fa-x-twitter', cls: 'blue', value: statMap['x posts/day'] || '500M', label: 'X Posts/Day', change: 'global', dir: 'up' },
     { icon: 'fas fa-fire-flame-curved', cls: 'pink', value: statMap['ai unicorns'] || '308', label: 'AI Unicorns', change: 'worldwide', dir: 'up' }
   ];
-
-  console.log('[AI Pulse] Parsed:', JSON.stringify({
-    news: data.news?.length, tweets: data.tweets?.length,
-    models: data.trending_models?.length, downloads: data.downloads?.length,
-    leaderboard: data.leaderboard?.length, ticker: data.ticker?.length
-  }));
 
   return data;
 }
@@ -688,257 +707,272 @@ function applyLiveData(data) {
   localStorage.setItem('ai_pulse_data', JSON.stringify(data));
   localStorage.setItem('ai_pulse_timestamp', Date.now().toString());
 
-  console.log('[AI Pulse] Applying live data from:', data.generated_at);
-
   // Ticker
-  if (data.ticker?.length) {
-    const el = document.getElementById('ticker-content');
-    const items = [...data.ticker, ...data.ticker];
-    el.innerHTML = items.map(t =>
-      `<span class="ticker-item"><i class="fas ${t.icon}"></i> ${t.text} ${t.change ? `<strong style="color:#4ECDC4">${t.change}</strong>` : ''}</span><span class="ticker-sep">|</span>`
-    ).join('');
+  if (data.ticker && data.ticker.length) {
+    var tickerEl = document.getElementById('ticker-content');
+    var tickerItems = [].concat(data.ticker, data.ticker);
+    tickerEl.innerHTML = tickerItems.map(function(t) {
+      return '<span class="ticker-item"><i class="fas ' + t.icon + '"></i> ' + t.text + ' ' + (t.change ? '<strong style="color:#4ECDC4">' + t.change + '</strong>' : '') + '</span><span class="ticker-sep">|</span>';
+    }).join('');
   }
 
   // Hero
-  if (data.hero?.length >= 3) {
-    const tagClasses = { BREAKING: 'breaking', TRENDING: 'trending', RESEARCH: '', INDUSTRY: '' };
-    const main = data.hero[0];
-    document.getElementById('hero-main').innerHTML = `
-      <div class="hero-card">
-        <img src="${main.img}" alt="">
-        <div class="hero-overlay full">
-          <div>
-            <span class="hero-tag ${tagClasses[main.tag] || ''}">${main.tag}</span>
-            <h1 class="hero-headline">${main.headline}</h1>
-            <p class="hero-excerpt">${main.excerpt || ''}</p>
-            <div class="hero-meta">
-              <span>${main.source}</span><span>${main.time}</span>${main.readTime ? `<span>${main.readTime}</span>` : ''}
-            </div>
-          </div>
-        </div>
-      </div>`;
+  if (data.hero && data.hero.length >= 3) {
+    var tagClasses = { BREAKING: 'breaking', TRENDING: 'trending', RESEARCH: '', INDUSTRY: '' };
+    var main = data.hero[0];
+    document.getElementById('hero-main').innerHTML =
+      '<div class="hero-card">' +
+        '<img src="' + main.img + '" alt="">' +
+        '<div class="hero-overlay full"><div>' +
+          '<span class="hero-tag ' + (tagClasses[main.tag] || '') + '">' + main.tag + '</span>' +
+          '<h1 class="hero-headline">' + main.headline + '</h1>' +
+          '<p class="hero-excerpt">' + (main.excerpt || '') + '</p>' +
+          '<div class="hero-meta"><span>' + main.source + '</span><span>' + main.time + '</span>' + (main.readTime ? '<span>' + main.readTime + '</span>' : '') + '</div>' +
+        '</div></div>' +
+      '</div>';
 
-    document.getElementById('hero-side').innerHTML = data.hero.slice(1, 3).map(s => `
-      <div class="hero-card">
-        <img src="${s.img}" alt="">
-        <div class="hero-overlay full">
-          <div>
-            <span class="hero-tag ${tagClasses[s.tag] || ''}">${s.tag}</span>
-            <h2 class="hero-headline">${s.headline}</h2>
-            <div class="hero-meta"><span>${s.source}</span><span>${s.time}</span></div>
-          </div>
-        </div>
-      </div>
-    `).join('');
+    document.getElementById('hero-side').innerHTML = data.hero.slice(1, 3).map(function(s) {
+      return '<div class="hero-card">' +
+        '<img src="' + s.img + '" alt="">' +
+        '<div class="hero-overlay full"><div>' +
+          '<span class="hero-tag ' + (tagClasses[s.tag] || '') + '">' + s.tag + '</span>' +
+          '<h2 class="hero-headline">' + s.headline + '</h2>' +
+          '<div class="hero-meta"><span>' + s.source + '</span><span>' + s.time + '</span></div>' +
+        '</div></div>' +
+      '</div>';
+    }).join('');
   }
 
   // Stats
-  if (data.stats?.length) {
-    document.getElementById('stats-bar').innerHTML = data.stats.map(s => `
-      <div class="stat-item">
-        <div class="stat-icon ${s.cls}"><i class="${s.icon}"></i></div>
-        <div>
-          <div class="stat-value">${s.value}</div>
-          <div class="stat-label">${s.label}</div>
-          <div class="stat-change ${s.dir}">${s.dir === 'up' ? '↑' : '↓'} ${s.change}</div>
-        </div>
-      </div>
-    `).join('');
+  if (data.stats && data.stats.length) {
+    document.getElementById('stats-bar').innerHTML = data.stats.map(function(s) {
+      return '<div class="stat-item">' +
+        '<div class="stat-icon ' + s.cls + '"><i class="' + s.icon + '"></i></div>' +
+        '<div>' +
+          '<div class="stat-value">' + s.value + '</div>' +
+          '<div class="stat-label">' + s.label + '</div>' +
+          '<div class="stat-change ' + s.dir + '">' + (s.dir === 'up' ? '↑' : '↓') + ' ' + s.change + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
   }
 
   // Trending models
-  if (data.trending_models?.length) {
-    document.getElementById('trending-models').innerHTML = data.trending_models.map(m => {
-      const rankCls = m.rank === 1 ? 'gold' : m.rank === 2 ? 'silver' : m.rank === 3 ? 'bronze' : 'default';
-      const avatarUrl = m.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(m.author)}&background=4ECDC4&color=fff&size=200`;
-      const imgUrl = m.img || 'https://images.unsplash.com/photo-1676299081847-824916de030a?w=400&q=80';
-      return `
-      <a href="https://huggingface.co/${m.author}/${m.name}" target="_blank" rel="noopener" class="model-card animate-in" style="animation-delay: ${m.rank * 60}ms; text-decoration:none; color:inherit; display:block;">
-        <div class="model-rank ${rankCls}">${m.rank}</div>
-        <div class="model-trend ${m.trendType || 'up'}"><i class="fas fa-arrow-up"></i> ${m.trend || ''}</div>
-        <div class="model-banner">
-          <img src="${imgUrl}" alt="">
-          <div class="model-banner-overlay">
-            <div class="model-logo"><img src="${avatarUrl}" alt="${m.author}" style="width:100%;height:100%;object-fit:cover;border-radius:12px"></div>
-          </div>
-        </div>
-        <div class="model-body">
-          <div class="model-name">${m.name}</div>
-          <div class="model-author">${m.author}</div>
-          <div class="model-tags">
-            <span class="model-tag-pill task">${m.task || 'model'}</span>
-            ${(m.tags || []).map(t => `<span class="model-tag-pill">${t}</span>`).join('')}
-          </div>
-          <div class="model-stats">
-            <div class="model-stat">
-              <div class="model-stat-value"><i class="fas fa-heart" style="color:var(--red);font-size:12px"></i> ${fmt(m.likes || 0)}</div>
-              <div class="model-stat-label">Likes</div>
-            </div>
-            <div class="model-stat">
-              <div class="model-stat-value"><i class="fas fa-download" style="color:var(--green);font-size:12px"></i> ${fmt(m.downloads || 0)}</div>
-              <div class="model-stat-label">Downloads</div>
-            </div>
-          </div>
-        </div>
-      </a>`;
+  if (data.trending_models && data.trending_models.length) {
+    document.getElementById('trending-models').innerHTML = data.trending_models.map(function(m) {
+      var rankCls = m.rank === 1 ? 'gold' : m.rank === 2 ? 'silver' : m.rank === 3 ? 'bronze' : 'default';
+      var avatarUrl = m.avatar || ('https://ui-avatars.com/api/?name=' + encodeURIComponent(m.author) + '&background=4ECDC4&color=fff&size=200');
+      var imgUrl = m.img || 'https://images.unsplash.com/photo-1676299081847-824916de030a?w=400&q=80';
+      return '<a href="https://huggingface.co/' + m.author + '/' + m.name + '" target="_blank" rel="noopener" class="model-card animate-in" style="animation-delay: ' + (m.rank * 60) + 'ms; text-decoration:none; color:inherit; display:block;">' +
+        '<div class="model-rank ' + rankCls + '">' + m.rank + '</div>' +
+        '<div class="model-trend ' + (m.trendType || 'up') + '"><i class="fas fa-arrow-up"></i> ' + (m.trend || '') + '</div>' +
+        '<div class="model-banner">' +
+          '<img src="' + imgUrl + '" alt="">' +
+          '<div class="model-banner-overlay">' +
+            '<div class="model-logo"><img src="' + avatarUrl + '" alt="' + m.author + '" style="width:100%;height:100%;object-fit:cover;border-radius:12px"></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="model-body">' +
+          '<div class="model-name">' + m.name + '</div>' +
+          '<div class="model-author">' + m.author + '</div>' +
+          '<div class="model-tags">' +
+            '<span class="model-tag-pill task">' + (m.task || 'model') + '</span>' +
+            (m.tags || []).map(function(t) { return '<span class="model-tag-pill">' + t + '</span>'; }).join('') +
+          '</div>' +
+          '<div class="model-stats">' +
+            '<div class="model-stat">' +
+              '<div class="model-stat-value"><i class="fas fa-heart" style="color:var(--red);font-size:12px"></i> ' + fmt(m.likes || 0) + '</div>' +
+              '<div class="model-stat-label">Likes</div>' +
+            '</div>' +
+            '<div class="model-stat">' +
+              '<div class="model-stat-value"><i class="fas fa-download" style="color:var(--green);font-size:12px"></i> ' + fmt(m.downloads || 0) + '</div>' +
+              '<div class="model-stat-label">Downloads</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</a>';
     }).join('');
   }
 
-  // Leaderboard
-  if (data.leaderboard?.length) {
-    document.getElementById('leaderboard').innerHTML = data.leaderboard.map(l => `
-      <div class="lb-row">
-        <div class="lb-rank ${l.rank <= 3 ? 'r' + l.rank : ''}">${l.rank}</div>
-        <div class="lb-info">
-          <div class="lb-name">${l.name}</div>
-          <div class="lb-meta">
-            <span>${l.org}</span>
-            <span>Arena: ${l.arena || '-'}</span>
-            <span>${l.tasks || ''}</span>
-          </div>
-        </div>
-        <div class="lb-bar"><div class="lb-bar-fill" style="width:${l.bar || 80}%"></div></div>
-        <div class="lb-score">${l.score}</div>
-      </div>
-    `).join('');
-  }
-
-  // Downloads
-  if (data.downloads?.length) {
-    document.getElementById('downloads-list').innerHTML = data.downloads.map(d => {
-      const avatarUrl = d.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(d.author)}&background=4ECDC4&color=fff&size=80`;
-      return `
-      <a href="https://huggingface.co/${d.name}" target="_blank" rel="noopener" class="dl-row" style="text-decoration:none;color:inherit;">
-        <div class="dl-icon" style="overflow:hidden"><img src="${avatarUrl}" alt="${d.author}" style="width:100%;height:100%;object-fit:cover;border-radius:10px"></div>
-        <div class="dl-info">
-          <div class="dl-name">${(d.name || '').split('/').pop()}</div>
-          <div class="dl-author">${d.author}</div>
-        </div>
-        <div class="dl-count">
-          <div class="dl-count-value" style="color:var(--green)">${d.downloads}</div>
-          <div class="dl-count-label">this week</div>
-        </div>
-      </a>`;
+  // Leaderboard — real Elo scores, clickable links to lmarena.ai
+  if (data.leaderboard && data.leaderboard.length) {
+    document.getElementById('leaderboard').innerHTML = data.leaderboard.map(function(l) {
+      return '<a href="https://lmarena.ai/" target="_blank" rel="noopener" class="lb-row" style="text-decoration:none;color:inherit;">' +
+        '<div class="lb-rank ' + (l.rank <= 3 ? 'r' + l.rank : '') + '">' + l.rank + '</div>' +
+        '<div class="lb-info">' +
+          '<div class="lb-name">' + l.name + '</div>' +
+          '<div class="lb-meta">' +
+            '<span>' + l.org + '</span>' +
+            '<span>' + (l.tasks || '') + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="lb-bar"><div class="lb-bar-fill" style="width:' + (l.bar || 80) + '%"></div></div>' +
+        '<div class="lb-score">' + (typeof l.score === 'number' && l.score > 1000 ? l.score.toLocaleString() : l.score) + '</div>' +
+      '</a>';
     }).join('');
   }
 
-  // News
-  if (data.news?.length) {
-    document.getElementById('news-grid').innerHTML = data.news.map(n => {
-      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(n.headline)}`;
-      return `
-      <a href="${n.url || searchUrl}" target="_blank" rel="noopener" class="news-card" style="text-decoration:none;color:inherit;">
-        <div class="news-img">
-          <img src="${n.img}" alt="" onerror="this.src='https://images.unsplash.com/photo-1677442136019-21780ecad995?w=600&q=80'">
-          <div class="news-source">${n.source}</div>
-        </div>
-        <div class="news-body">
-          <div class="news-headline">${n.headline}</div>
-          <div class="news-snippet">${n.snippet}</div>
-          <div class="news-footer">
-            <span>${n.time}</span>
-            <span>${n.readTime || ''}</span>
-          </div>
-        </div>
-      </a>`;
+  // Downloads — clickable links to huggingface.co
+  if (data.downloads && data.downloads.length) {
+    document.getElementById('downloads-list').innerHTML = data.downloads.map(function(d) {
+      var avatarUrl = d.avatar || ('https://ui-avatars.com/api/?name=' + encodeURIComponent(d.author) + '&background=4ECDC4&color=fff&size=80');
+      return '<a href="https://huggingface.co/' + d.name + '" target="_blank" rel="noopener" class="dl-row" style="text-decoration:none;color:inherit;">' +
+        '<div class="dl-icon" style="overflow:hidden"><img src="' + avatarUrl + '" alt="' + d.author + '" style="width:100%;height:100%;object-fit:cover;border-radius:10px"></div>' +
+        '<div class="dl-info">' +
+          '<div class="dl-name">' + (d.name || '').split('/').pop() + '</div>' +
+          '<div class="dl-author">' + d.author + '</div>' +
+        '</div>' +
+        '<div class="dl-count">' +
+          '<div class="dl-count-value" style="color:var(--green)">' + d.downloads + '</div>' +
+          '<div class="dl-count-label">this week</div>' +
+        '</div>' +
+      '</a>';
     }).join('');
   }
 
-  // Tweets
-  if (data.tweets?.length) {
-    document.getElementById('tweets-grid').innerHTML = data.tweets.map(t => {
-      const avatarUrl = t.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(t.name)}&background=4ECDC4&color=fff&size=200`;
-      const profileUrl = `https://x.com/${(t.handle || '').replace('@','')}`;
-      return `
-      <a href="${profileUrl}" target="_blank" rel="noopener" class="tweet-card" style="text-decoration:none;color:inherit;">
-        <div class="tweet-header">
-          <div class="tweet-avatar"><img src="${avatarUrl}" alt="${t.name}" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(t.name)}&background=4ECDC4&color=fff&size=200'"></div>
-          <div>
-            <div style="display:flex;align-items:center;gap:6px">
-              <span class="tweet-name">${t.name}</span>
-              ${t.verified ? '<i class="fas fa-circle-check tweet-verified"></i>' : ''}
-            </div>
-            <div class="tweet-handle">${t.handle}</div>
-          </div>
-        </div>
-        <div class="tweet-body">${t.body}</div>
-        <div class="tweet-footer">
-          <span><i class="far fa-comment"></i> ${t.replies || '0'}</span>
-          <span><i class="fas fa-retweet"></i> ${t.retweets || '0'}</span>
-          <span><i class="far fa-heart"></i> ${t.likes || '0'}</span>
-          <span class="tweet-time">${t.time || ''}</span>
-        </div>
-      </a>`;
+  // News — clickable links (URL or Google search fallback)
+  if (data.news && data.news.length) {
+    document.getElementById('news-grid').innerHTML = data.news.map(function(n) {
+      var href = n.url || ('https://www.google.com/search?q=' + encodeURIComponent(n.headline));
+      return '<a href="' + href + '" target="_blank" rel="noopener" class="news-card" style="text-decoration:none;color:inherit;">' +
+        '<div class="news-img">' +
+          '<img src="' + n.img + '" alt="" onerror="this.src=\'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=600&q=80\'">' +
+          '<div class="news-source">' + n.source + '</div>' +
+        '</div>' +
+        '<div class="news-body">' +
+          '<div class="news-headline">' + n.headline + '</div>' +
+          '<div class="news-snippet">' + n.snippet + '</div>' +
+          '<div class="news-footer">' +
+            '<span>' + n.time + '</span>' +
+            '<span>' + (n.readTime || '') + '</span>' +
+          '</div>' +
+        '</div>' +
+      '</a>';
+    }).join('');
+  }
+
+  // GitHub Trending — clickable links to github.com/{name}
+  if (data.github && data.github.length) {
+    document.getElementById('github-grid').innerHTML = data.github.map(function(g) {
+      return '<a href="https://github.com/' + g.name + '" target="_blank" rel="noopener" class="gh-card" style="text-decoration:none;color:inherit;">' +
+        '<div class="gh-stars-today"><i class="fas fa-star"></i> ' + (g.starsToday ? g.starsToday.toLocaleString() + ' this week' : '') + '</div>' +
+        '<div class="gh-header">' +
+          '<div class="gh-avatar"><img src="' + g.avatar + '" alt="' + g.owner + '" onerror="this.src=\'https://ui-avatars.com/api/?name=' + encodeURIComponent(g.owner) + '&background=4ECDC4&color=fff&size=80\'"></div>' +
+          '<div>' +
+            '<div class="gh-repo-name">' + (g.name || '').split('/').pop() + '</div>' +
+            '<div class="gh-repo-owner">' + g.owner + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="gh-desc">' + (g.desc || '') + '</div>' +
+        '<div class="gh-lang">' +
+          '<span class="gh-lang-dot" style="background:' + (g.langColor || '#888') + '"></span>' +
+          (g.lang || '') +
+        '</div>' +
+        '<div class="gh-stats">' +
+          '<span><i class="fas fa-star"></i> ' + g.stars + '</span>' +
+          '<span><i class="fas fa-code-branch"></i> ' + (g.forks || '-') + '</span>' +
+        '</div>' +
+      '</a>';
+    }).join('');
+  }
+
+  // Tweets — clickable links to x.com/{handle}
+  if (data.tweets && data.tweets.length) {
+    document.getElementById('tweets-grid').innerHTML = data.tweets.map(function(t) {
+      var avatarUrl = t.avatar || ('https://ui-avatars.com/api/?name=' + encodeURIComponent(t.name) + '&background=4ECDC4&color=fff&size=200');
+      var profileUrl = 'https://x.com/' + (t.handle || '').replace('@', '');
+      return '<a href="' + profileUrl + '" target="_blank" rel="noopener" class="tweet-card" style="text-decoration:none;color:inherit;">' +
+        '<div class="tweet-header">' +
+          '<div class="tweet-avatar"><img src="' + avatarUrl + '" alt="' + t.name + '" onerror="this.src=\'https://ui-avatars.com/api/?name=' + encodeURIComponent(t.name) + '&background=4ECDC4&color=fff&size=200\'"></div>' +
+          '<div>' +
+            '<div style="display:flex;align-items:center;gap:6px">' +
+              '<span class="tweet-name">' + t.name + '</span>' +
+              (t.verified ? '<i class="fas fa-circle-check tweet-verified"></i>' : '') +
+            '</div>' +
+            '<div class="tweet-handle">' + t.handle + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="tweet-body">' + t.body + '</div>' +
+        '<div class="tweet-footer">' +
+          '<span><i class="far fa-comment"></i> ' + (t.replies || '0') + '</span>' +
+          '<span><i class="fas fa-retweet"></i> ' + (t.retweets || '0') + '</span>' +
+          '<span><i class="far fa-heart"></i> ' + (t.likes || '0') + '</span>' +
+          '<span class="tweet-time">' + (t.time || '') + '</span>' +
+        '</div>' +
+      '</a>';
     }).join('');
   }
 
   // Update timestamp
-  const now = new Date();
-  setStatus(`${now.toLocaleTimeString()}`, true);
+  var now = new Date();
+  setStatus(now.toLocaleTimeString(), true);
 }
 
-// 5. Full refresh cycle: trigger → poll → apply
+// 5. Full refresh cycle: trigger -> poll -> apply
 async function refreshLiveData() {
-  if (isRefreshing) { console.log('[AI Pulse] Already refreshing, skipping'); return; }
+  if (isRefreshing) return;
   isRefreshing = true;
   setStatus('fetching...', false);
 
   try {
-    const executionID = await triggerWebhook();
-    if (!executionID) { setStatus('webhook failed', false); isRefreshing = false; return; }
+    var executionID = await triggerWebhook();
+    if (!executionID) {
+      setStatus('webhook failed', false);
+      isRefreshing = false;
+      return;
+    }
 
     if (!OND_API_KEY) {
-      setStatus('no API key — set via console', false);
-      console.warn('[AI Pulse] To enable live data, run: localStorage.setItem("ond_api_key", "YOUR_KEY") then reload');
+      setStatus('no API key', false);
       isRefreshing = false;
       return;
     }
 
     setStatus('processing...', false);
-    const outputs = await pollExecution(executionID);
-    if (!outputs) { setStatus('polling timeout', false); isRefreshing = false; return; }
+    var outputs = await pollExecution(executionID);
+    if (!outputs) {
+      setStatus('polling timeout', false);
+      isRefreshing = false;
+      return;
+    }
 
-    const liveData = extractJSON(outputs);
+    var liveData = extractJSON(outputs);
     if (liveData) {
       applyLiveData(liveData);
-      console.log('[AI Pulse] Live data applied successfully!');
     } else {
       setStatus('parse error', false);
     }
   } catch (e) {
-    console.error('[AI Pulse] Refresh error:', e);
     setStatus('error', false);
   }
 
   isRefreshing = false;
 }
 
-// 6. Load cached data on startup, schedule hourly refresh
+// 6. Advanced caching — always show last data instantly, refresh silently in background
 function init() {
-  // Check for cached live data
-  const cached = localStorage.getItem('ai_pulse_data');
-  const cachedTs = parseInt(localStorage.getItem('ai_pulse_timestamp') || '0');
-  const age = Date.now() - cachedTs;
+  var cached = localStorage.getItem('ai_pulse_data');
+  var cachedTs = parseInt(localStorage.getItem('ai_pulse_timestamp') || '0');
+  var age = Date.now() - cachedTs;
 
-  if (cached && age < REFRESH_INTERVAL) {
+  // Always render cached data immediately — no loading screens
+  if (cached) {
     try {
-      const data = JSON.parse(cached);
-      applyLiveData(data);
-      console.log(`[AI Pulse] Loaded cached data (${Math.round(age / 60000)}min old)`);
-    } catch (e) { /* ignore bad cache */ }
+      applyLiveData(JSON.parse(cached));
+      var mins = Math.round(age / 60000);
+      if (mins < 60) setStatus(mins + 'm ago', true);
+      else setStatus(Math.round(mins / 60) + 'h ago', true);
+    } catch (e) { /* corrupted cache, will refresh */ }
   }
 
-  // Auto-refresh if data is stale or missing
+  // Silently refresh in background if data is stale (>1 hour) or missing
   if (!cached || age >= REFRESH_INTERVAL) {
-    console.log('[AI Pulse] Data is stale, triggering refresh...');
+    if (cached) setStatus('updating...', true); // keep green dot, just note updating
     refreshLiveData();
   }
 
-  // Schedule hourly refresh
+  // Schedule hourly silent refresh
   setInterval(refreshLiveData, REFRESH_INTERVAL);
-  console.log('[AI Pulse] Hourly refresh scheduled');
-  console.log('[AI Pulse] To set API key: localStorage.setItem("ond_api_key", "YOUR_KEY")');
-  console.log('[AI Pulse] To force refresh: refreshLiveData()');
 }
 
 // Start
