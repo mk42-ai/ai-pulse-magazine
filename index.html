@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Pulse — The AI Magazine</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="nav-inner">
+      <div class="nav-brand">
+        <img src="logo.svg" alt="AI Pulse" class="brand-logo">
+        <span class="brand-badge">LIVE</span>
+      </div>
+      <div class="nav-links">
+        <a href="#trending" class="nav-link active">Trending</a>
+        <a href="#models" class="nav-link">Models</a>
+        <a href="#github" class="nav-link">GitHub</a>
+        <a href="#news" class="nav-link">News</a>
+        <a href="#tweets" class="nav-link">Tweets</a>
+      </div>
+      <div class="nav-right">
+        <div class="live-indicator">
+          <span class="live-dot"></span>
+          <span class="live-text">Updated <span id="last-update">just now</span></span>
+        </div>
+        <button class="btn-subscribe"><i class="fas fa-bell"></i> Subscribe</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Ticker Bar -->
+  <div class="ticker-bar">
+    <div class="ticker-label"><i class="fas fa-fire"></i> TRENDING NOW</div>
+    <div class="ticker-track">
+      <div class="ticker-content" id="ticker-content"></div>
+    </div>
+  </div>
+
+  <!-- Hero Section -->
+  <section class="hero" id="hero">
+    <div class="hero-grid">
+      <div class="hero-main" id="hero-main"></div>
+      <div class="hero-side" id="hero-side"></div>
+    </div>
+  </section>
+
+  <!-- Stats Bar -->
+  <section class="stats-bar">
+    <div class="stats-inner" id="stats-bar"></div>
+  </section>
+
+  <!-- Trending Models -->
+  <section class="section" id="trending">
+    <div class="section-header">
+      <div class="section-title-group">
+        <span class="section-icon"><i class="fas fa-chart-line"></i></span>
+        <h2 class="section-title">Trending Models</h2>
+        <span class="section-badge">This Week</span>
+      </div>
+      <div class="section-tabs">
+        <button class="tab active" data-tab="all">All</button>
+        <button class="tab" data-tab="text-generation">Text Gen</button>
+        <button class="tab" data-tab="image">Image</button>
+        <button class="tab" data-tab="audio">Audio</button>
+        <button class="tab" data-tab="multimodal">Multimodal</button>
+      </div>
+    </div>
+    <div class="models-grid" id="trending-models"></div>
+  </section>
+
+  <!-- Leaderboard + Downloads Split -->
+  <section class="section split-section" id="models">
+    <div class="split-left">
+      <div class="section-header">
+        <div class="section-title-group">
+          <span class="section-icon"><i class="fas fa-trophy"></i></span>
+          <h2 class="section-title">Model Leaderboard</h2>
+        </div>
+      </div>
+      <div class="leaderboard" id="leaderboard"></div>
+    </div>
+    <div class="split-right">
+      <div class="section-header">
+        <div class="section-title-group">
+          <span class="section-icon"><i class="fas fa-download"></i></span>
+          <h2 class="section-title">Most Downloaded</h2>
+          <span class="section-badge">7 Days</span>
+        </div>
+      </div>
+      <div class="downloads-list" id="downloads-list"></div>
+    </div>
+  </section>
+
+  <!-- GitHub Trending -->
+  <section class="section section-dark" id="github">
+    <div class="section-header">
+      <div class="section-title-group">
+        <span class="section-icon"><i class="fab fa-github"></i></span>
+        <h2 class="section-title">Trending AI on GitHub</h2>
+        <span class="section-badge hot">Hot</span>
+      </div>
+      <div class="section-tabs">
+        <button class="tab active" data-tab="daily">Today</button>
+        <button class="tab" data-tab="weekly">This Week</button>
+        <button class="tab" data-tab="monthly">This Month</button>
+      </div>
+    </div>
+    <div class="github-grid" id="github-grid"></div>
+  </section>
+
+  <!-- AI News -->
+  <section class="section" id="news">
+    <div class="section-header">
+      <div class="section-title-group">
+        <span class="section-icon"><i class="fas fa-newspaper"></i></span>
+        <h2 class="section-title">AI News</h2>
+        <span class="section-badge">Latest</span>
+      </div>
+    </div>
+    <div class="news-grid" id="news-grid"></div>
+  </section>
+
+  <!-- Top AI Tweets -->
+  <section class="section section-dark" id="tweets">
+    <div class="section-header">
+      <div class="section-title-group">
+        <span class="section-icon"><i class="fab fa-x-twitter"></i></span>
+        <h2 class="section-title">Top AI Tweets</h2>
+        <span class="section-badge live-badge"><span class="live-dot-sm"></span> By the Hour</span>
+      </div>
+    </div>
+    <div class="tweets-grid" id="tweets-grid"></div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <img src="logo.svg" alt="AI Pulse" class="brand-logo" style="height:36px">
+        <p class="footer-tagline">Your real-time window into the AI ecosystem</p>
+      </div>
+      <div class="footer-meta">
+        <p>Powered by <strong>On-Demand.io</strong></p>
+        <p>Data from HuggingFace, GitHub, X/Twitter</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
